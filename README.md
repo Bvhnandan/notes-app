@@ -1,6 +1,6 @@
 # Notes App API
 
-A multi-user notes backend built with **FastAPI + SQLAlchemy**, supporting JWT authentication, note sharing, pinning, pagination, and full-text search.
+A multi-user notes backend built with **FastAPI + SQLAlchemy**, supporting JWT authentication, note sharing, note version history, pagination, and full-text search. Deployed on Railway (Render required payment).
 
 ---
 
@@ -9,18 +9,19 @@ A multi-user notes backend built with **FastAPI + SQLAlchemy**, supporting JWT a
 ```
 notes-app/
 ├── app/
-│   ├── main.py          # FastAPI app, /about endpoint
-│   ├── database.py      # DB connection (SQLite local / PostgreSQL on Render)
-│   ├── auth.py          # JWT helpers, password hashing, get_current_user
+│   ├── main.py           # FastAPI app, /about endpoint
+│   ├── database.py       # DB connection (SQLite local / PostgreSQL on Railway)
+│   ├── auth.py           # JWT helpers, password hashing, get_current_user
+│   ├── version_hooks.py  # SQLAlchemy auto-snapshot hook for version history
 │   ├── models/
-│   │   ├── models.py    # SQLAlchemy table definitions
-│   │   └── schemas.py   # Pydantic request/response schemas
+│   │   ├── models.py     # SQLAlchemy table definitions
+│   │   └── schemas.py    # Pydantic request/response schemas
 │   └── routers/
-│       ├── auth.py      # POST /register, POST /login
-│       └── notes.py     # All /notes endpoints
+│       ├── auth.py       # POST /register, POST /login
+│       ├── notes.py      # All /notes endpoints
+│       └── history.py    # Note version history endpoints
 ├── requirements.txt
-├── render.yaml          # One-click Render deployment config
-└── .env.example         # Copy to .env for local dev
+└── .env.example          # Copy to .env for local dev
 ```
 
 ---
@@ -55,7 +56,7 @@ cp .env.example .env
 uvicorn app.main:app --reload
 ```
 
-Server runs at: http://localhost:8000
+Server runs at: http://localhost:8000  
 Interactive docs at: http://localhost:8000/docs
 
 ---
@@ -72,7 +73,10 @@ Interactive docs at: http://localhost:8000/docs
 | PUT | /notes/{id} | Auth Required | Update a note |
 | DELETE | /notes/{id} | Auth Required | Delete a note |
 | POST | /notes/{id}/share | Auth Required | Share note with another user |
-| PATCH | /notes/{id}/pin | Auth Required | Pin/unpin a note (custom feature) |
+| GET | /notes/{id}/history | Auth Required | List all previous versions of a note |
+| GET | /notes/{id}/history/{version} | Auth Required | Get a specific historical version |
+| POST | /notes/{id}/history/{version}/restore | Auth Required | Restore note to a previous version |
+| PATCH | /notes/{id}/pin | Auth Required | Pin/unpin a note |
 | GET | /notes?q=keyword | Auth Required | Full-text search |
 | GET | /notes?page=1&page_size=20 | Auth Required | Paginated notes |
 | GET | /about | Not Required | About the developer |
@@ -80,11 +84,19 @@ Interactive docs at: http://localhost:8000/docs
 
 ---
 
-## Custom Feature: Pin Notes 📌
+## Custom Feature: Note Version History 🕓
 
-`PATCH /notes/{id}/pin` with body `{"is_pinned": true}`
+Every time a note is edited via `PUT /notes/{id}`, the previous content is automatically saved as a snapshot — no manual action needed.
 
-Pinned notes always appear at the top of `GET /notes`, just like Google Keep. Only the note owner can pin/unpin.
+**Endpoints:**
+- `GET /notes/{id}/history` — view all previous versions in order
+- `GET /notes/{id}/history/{version}` — see what a specific version contained
+- `POST /notes/{id}/history/{version}/restore` — restore the note to that version
+
+**Key design decisions:**
+- Snapshots are created automatically via a SQLAlchemy `before_flush` hook — the existing update endpoint needed zero modification
+- When restoring, the current live content is saved as a new snapshot first, so **no data is ever lost**
+- Only the note owner can view or restore history
 
 ---
 
